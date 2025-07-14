@@ -15,6 +15,5 @@
   "tailwindcss": "...",
   "postcss": "...",
   "autoprefixer": "...",
-  "@vitejs/plugin-react": "^4.0.0"
 }
 }
