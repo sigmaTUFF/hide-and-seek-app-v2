@@ -94,8 +94,7 @@ const [pendingThermometerOption, setPendingThermometerOption] = useState(null);
 const [selectedRadarCard, setSelectedRadarCard] = useState(null);
 const [pendingRadarOption, setPendingRadarOption] = useState(null);
 
-  // Reset
-  const [resetConfirm, setResetConfirm] = useState(false);
+
 
   // Speicher localStorage Updates
   useEffect(() => {
@@ -236,39 +235,6 @@ const cancelUseRadarOption = () => {
 };
 
 
-  // Reset alle
-  const startReset = () => {
-    setResetConfirm(true);
-  };
-
-  const confirmReset = () => {
-    setUsedCompareOptions([]);
-    setUsedPrecisionWords([]);
-    setUsedPhotoPrompts([]);
-    setUsedMasseOptions([]);
-    setSelectedCompareCard(null);
-    setSelectedPrecisionCard(null);
-    setSelectedPhotoCard(null);
-    setSelectedMasseCard(null);
-    setPendingCompareOption(null);
-    setPendingPrecisionWord(null);
-    setPendingPhotoPrompt(null);
-    setPendingMasseOption(null);
-    setUsedThermometerOptions([]);
-    setSelectedThermometerCard(null);
-    setPendingThermometerOption(null);
-    setUsedRadarOptions([]);
-    setSelectedRadarCard(null);
-    setPendingRadarOption(null);
-    setDistanceInput("");
-    setResetConfirm(false);
-    
-
-  };
-
-  const cancelReset = () => {
-    setResetConfirm(false);
-  };
 
   // Disable helpers
   const isCompareUsed = (option) => usedCompareOptions.includes(option);
@@ -304,31 +270,7 @@ const cancelUseRadarOption = () => {
             title="Notizen werden aktuell nicht unterstützt"
           >
             Notizen (bald)
-          </button>
-          <button
-            onClick={startReset}
-            className="btn p-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Reset alle verwendeten Karten
-          </button>
-
-          {resetConfirm && (
-            <div className="mt-4 border p-3 bg-yellow-100 rounded">
-              <p className="mb-2 font-semibold">Willst du wirklich alle verwendeten Karten zurücksetzen?</p>
-              <button
-                onClick={confirmReset}
-                className="btn p-2 mr-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Ja, zurücksetzen
-              </button>
-              <button
-                onClick={cancelReset}
-                className="btn p-2 bg-gray-400 rounded hover:bg-gray-500"
-              >
-                Nein, abbrechen
-              </button>
-            </div>
-          )}
+          
         </>
       )}
 
