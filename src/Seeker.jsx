@@ -263,14 +263,14 @@ const cancelUseRadarOption = () => {
           >
             Fragen
           </button>
-          <button
+<button
             onClick={() => setView("notizen")}
             className="btn p-2 mb-4 bg-gray-400 text-white rounded cursor-not-allowed"
             disabled
             title="Notizen werden aktuell nicht unterstützt"
           >
             Notizen (bald)
-          
+          </button>
         </>
       )}
 
