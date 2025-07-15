@@ -89,9 +89,6 @@ const cardsWithCount = [
   example:
     "Du gibst zwei Karten plus Recycling 2.0 ab und bekommst drei neue Karten ins Inventar.",
 },
-
-
-
 ];
 
 function createDeck(cardsWithCount) {
@@ -114,7 +111,7 @@ function getCardInfo(cardText) {
   };
 }
 
-export default function Hider() {
+export default function Hider({ goBackToMenu }) {
   const [deck, setDeck] = useState(() => createDeck(cardsWithCount));
   const [hiderInventory, setHiderInventory] = useState(() => {
     const saved = localStorage.getItem("hiderInventory");
@@ -128,7 +125,6 @@ export default function Hider() {
   const [pendingCard, setPendingCard] = useState(null);
   const [showCardDetail, setShowCardDetail] = useState(null);
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDuplicatePrompt, setShowDuplicatePrompt] = useState(false);
 
   useEffect(() => {
@@ -182,23 +178,6 @@ export default function Hider() {
     setPendingCard(null);
   };
 
-  const resetGame = () => setShowResetConfirm(true);
-
-  const confirmReset = () => {
-    setDeck(createDeck(cardsWithCount));
-    setHiderInventory([]);
-    setCurrentCard(null);
-    setPendingCard(null);
-    setShowCardDetail(null);
-    setConfirmDeleteIndex(null);
-    setShowResetConfirm(false);
-    setMaxInventorySize(6);
-    localStorage.removeItem("hiderInventory");
-    localStorage.removeItem("maxInventorySize");
-  };
-
-  const cancelReset = () => setShowResetConfirm(false);
-
 const duplicateCard = (card) => {
   const indexOfDuplicate = hiderInventory.indexOf("Duplicate-Karte");
 
@@ -224,9 +203,16 @@ const duplicateCard = (card) => {
   setShowDuplicatePrompt(false);
 };
 
-
   return (
     <div className="max-w-md mx-auto p-4 text-center flex flex-col min-h-screen">
+      {/* Zurück-Button */}
+      <button
+        onClick={goBackToMenu}
+        className="btn p-2 mb-4 bg-gray-300 rounded hover:bg-gray-400 self-start"
+      >
+        ← Zurück zum Hauptmenü
+      </button>
+
       <h1 className="text-xl font-bold mb-4">Hide & Seek – Karten ziehen</h1>
 
       <button
@@ -417,40 +403,6 @@ const duplicateCard = (card) => {
             >
               Abbrechen
             </button>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-auto pt-4 border-t mt-6">
-        <button
-          onClick={resetGame}
-          className="btn p-2 border rounded bg-red-600 text-white hover:bg-red-700"
-        >
-          Spiel zurücksetzen
-        </button>
-      </div>
-
-      {showResetConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded shadow max-w-sm w-full text-center">
-            <p className="mb-4 font-semibold">
-              Willst du das Spiel wirklich zurücksetzen? Alle Daten gehen
-              verloren!
-            </p>
-            <div className="flex justify-center gap-4">
-              <button
-                onClick={confirmReset}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Ja, zurücksetzen
-              </button>
-              <button
-                onClick={cancelReset}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Abbrechen
-              </button>
-            </div>
           </div>
         </div>
       )}
