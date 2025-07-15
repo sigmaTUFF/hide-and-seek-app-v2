@@ -49,7 +49,7 @@ const thermometerOptions = ["100m", "200m", "300m", "500m", "750m", "1km"];
 
 const radarOptions = ["100m", "250m", "500m", "1km", "2km", "3km"];
 
-export default function Seeker() {
+export default function Seeker({ goBackToMenu }) {
   const [view, setView] = useState("menu"); // menu, fragen, notizen, vergleiche, praezision, fotos, masse
 
   // Vergleichskategorie
@@ -282,10 +282,16 @@ const cancelUseRadarOption = () => {
   return (
     <div className="max-w-md mx-auto p-4 text-center min-h-screen flex flex-col">
       {/* Hauptmenü */}
-      {view === "menu" && (
-        <>
-          <h1 className="text-2xl font-bold mb-6">Seeker Hauptmenü</h1>
-          <button
+        {view === "menu" && (
+          <>
+            <button
+              onClick={goBackToMenu}
+              className="btn p-2 mb-4 bg-gray-300 rounded hover:bg-gray-400 self-start"
+            >
+              ← Zurück zum Hauptmenü
+            </button>
+            <h1 className="text-2xl font-bold mb-6">Seeker Hauptmenü</h1>
+            <button
             onClick={() => setView("fragen")}
             className="btn p-2 mb-4 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
