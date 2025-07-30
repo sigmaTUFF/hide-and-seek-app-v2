@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import ExclusionMap from "./ExclusionMap";
 
 const compareOptions = [
   "Spielplatz",
@@ -50,7 +51,7 @@ const thermometerOptions = ["100m", "200m", "300m", "500m", "750m", "1km"];
 const radarOptions = ["100m", "250m", "500m", "1km", "2km", "3km"];
 
 export default function Seeker({ goBackToMenu }) {
-  const [view, setView] = useState("menu"); // menu, fragen, notizen, vergleiche, praezision, fotos, masse
+  const [view, setView] = useState("menu"); // menu, fragen, notizen, vergleiche, praezision, fotos, masse, karte
 
   // Vergleichskategorie
   const [usedCompareOptions, setUsedCompareOptions] = useState(() => {
@@ -263,13 +264,11 @@ const cancelUseRadarOption = () => {
           >
             Fragen
           </button>
-<button
+          <button
             onClick={() => setView("notizen")}
-            className="btn p-2 mb-4 bg-gray-400 text-white rounded cursor-not-allowed"
-            disabled
-            title="Notizen werden aktuell nicht unterstützt"
+            className="btn p-2 mb-4 bg-green-600 text-white rounded hover:bg-green-700"
           >
-            Notizen (bald)
+            Ausschluss-Karte
           </button>
         </>
       )}
@@ -761,9 +760,8 @@ const cancelUseRadarOption = () => {
     )}
   </>
 )}
-      
 
-      {/* Notizen (noch nicht implementiert) */}
+      {/* Ausschluss-Karte */}
       {view === "notizen" && (
         <>
           <button
@@ -772,7 +770,8 @@ const cancelUseRadarOption = () => {
           >
             &larr; Zurück zum Menü
           </button>
-          <p>Notizen werden aktuell nicht unterstützt.</p>
+          
+          <ExclusionMap />
         </>
       )}
     </div>
