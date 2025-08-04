@@ -8,7 +8,9 @@ export default function ExclusionMap() {
   const [currentColor, setCurrentColor] = useState('red');
   const [currentTool, setCurrentTool] = useState('circle');
   const [circleRadius, setCircleRadius] = useState(0.5); // in km
-  const [isDrawing, setIsDrawing] = useState(false);
+  const [isDrawingLine, setIsDrawingLine] = useState(false);
+  const [lineStart, setLineStart] = useState(null);
+  const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentPath, setCurrentPath] = useState([]);
 
   // Leaflet CSS und JS dynamisch laden
@@ -100,6 +102,14 @@ export default function ExclusionMap() {
     // Layer Group für gezeichnete Items
     window.layerGroup = L.layerGroup().addTo(map);
     
+    // Temporäre Layer für Vorschauen
+    window.tempLayer = L.layerGroup().addTo(map);
+
+    // Klick-Events für die verschiedenen Tools
+    map.on('click', (e) => {
+      handleMapClick(e.latlng);
+    });
+
     // Touch/Mouse Events für Freihand-Zeichnen
     let drawing = false;
     let path = [];
@@ -108,16 +118,26 @@ export default function ExclusionMap() {
     map.on('mousedown touchstart', (e) => {
       if (currentTool === 'draw') {
         drawing = true;
+        setIsDrawingFreehand(true);
         path = [e.latlng];
         setCurrentPath([e.latlng]);
         
+        // Temporäre Linie während des Zeichnens
         currentPolyline = L.polyline(path, {
           color: currentColor === 'red' ? '#ff0000' : '#0000ff',
           weight: 3,
           opacity: 0.8
-        }).addTo(window.layerGroup);
+        }).addTo(window.tempLayer);
         
-        e.originalEvent.preventDefault();
+        // Verhindere Karten-Bewegung während des Zeichnens
+        map.dragging.disable();
+        map.touchZoom.disable();
+        map.doubleClickZoom.disable();
+        map.scrollWheelZoom.disable();
+        map.boxZoom.disable();
+        map.keyboard.disable();
+        
+        e.originalEvent?.preventDefault();
       }
     });
 
@@ -125,34 +145,132 @@ export default function ExclusionMap() {
       if (drawing && currentTool === 'draw') {
         path.push(e.latlng);
         setCurrentPath([...path]);
-        currentPolyline.setLatLngs(path);
-        e.originalEvent.preventDefault();
+        if (currentPolyline) {
+          currentPolyline.setLatLngs(path);
+        }
+        e.originalEvent?.preventDefault();
       }
     });
 
     map.on('mouseup touchend', (e) => {
       if (drawing && currentTool === 'draw') {
         drawing = false;
+        setIsDrawingFreehand(false);
         
-        // Freihand-Pfad als Item speichern
-        const newItem = {
-          id: Date.now(),
-          type: 'freehand',
-          color: currentColor,
-          path: path.map(p => ({ lat: p.lat, lng: p.lng })),
-          timestamp: new Date().toLocaleTimeString()
-        };
+        // Karten-Interaktion wieder aktivieren
+        map.dragging.enable();
+        map.touchZoom.enable();
+        map.doubleClickZoom.enable();
+        map.scrollWheelZoom.enable();
+        map.boxZoom.enable();
+        map.keyboard.enable();
         
-        const updatedItems = [...drawnItems, newItem];
-        setDrawnItems(updatedItems);
-        saveItems(updatedItems);
+        // Temporäre Linie entfernen
+        window.tempLayer.clearLayers();
+        
+        // Nur speichern wenn genug Punkte vorhanden
+        if (path.length > 3) {
+          const newItem = {
+            id: Date.now(),
+            type: 'freehand',
+            color: currentColor,
+            path: path.map(p => ({ lat: p.lat, lng: p.lng })),
+            timestamp: new Date().toLocaleTimeString()
+          };
+          
+          const updatedItems = [...drawnItems, newItem];
+          setDrawnItems(updatedItems);
+          saveItems(updatedItems);
+        }
+        
         setCurrentPath([]);
-        e.originalEvent.preventDefault();
+        e.originalEvent?.preventDefault();
       }
     });
 
     window.seekerMapInstance = map;
     renderAllItems();
+  };
+
+  const handleMapClick = (latlng) => {
+    // Nicht reagieren wenn gerade freihand gezeichnet wird
+    if (isDrawingFreehand) return;
+    
+    if (currentTool === 'circle') {
+      addCircle(latlng);
+    } else if (currentTool === 'line') {
+      handleLineClick(latlng);
+    }
+    // Bei 'draw' wird über die Touch-Events gehandelt
+  };
+
+  const addCircle = (latlng) => {
+    if (circleRadius <= 0) return;
+    
+    const newItem = {
+      id: Date.now(),
+      type: 'circle',
+      color: currentColor,
+      center: { lat: latlng.lat, lng: latlng.lng },
+      radius: circleRadius,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    const updatedItems = [...drawnItems, newItem];
+    setDrawnItems(updatedItems);
+    saveItems(updatedItems);
+  };
+
+  const handleLineClick = (latlng) => {
+    if (!isDrawingLine) {
+      // Ersten Punkt setzen
+      setIsDrawingLine(true);
+      setLineStart(latlng);
+      
+      // Temporären Startpunkt anzeigen
+      const L = window.L;
+      window.tempLayer.clearLayers();
+      L.circleMarker([latlng.lat, latlng.lng], {
+        radius: 5,
+        color: currentColor === 'red' ? '#ff0000' : '#0000ff',
+        fillColor: currentColor === 'red' ? '#ff0000' : '#0000ff',
+        fillOpacity: 0.8
+      }).addTo(window.tempLayer);
+      
+    } else {
+      // Zweiten Punkt setzen und Linie erstellen
+      const start = lineStart;
+      const end = latlng;
+      
+      // Distanz berechnen (Haversine Formel)
+      const R = 6371000; // Erdradius in Metern
+      const dLat = (end.lat - start.lat) * Math.PI / 180;
+      const dLng = (end.lng - start.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
+                Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) * 
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = Math.round(R * c);
+      
+      const newItem = {
+        id: Date.now(),
+        type: 'line',
+        color: currentColor,
+        start: { lat: start.lat, lng: start.lng },
+        end: { lat: end.lat, lng: end.lng },
+        distance: distance,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      const updatedItems = [...drawnItems, newItem];
+      setDrawnItems(updatedItems);
+      saveItems(updatedItems);
+      
+      // Reset
+      setIsDrawingLine(false);
+      setLineStart(null);
+      window.tempLayer.clearLayers();
+    }
   };
 
   const renderAllItems = () => {
@@ -182,7 +300,7 @@ export default function ExclusionMap() {
             <strong>${colorName} Kreis</strong><br>
             Radius: ${item.radius} km<br>
             Erstellt: ${item.timestamp}<br>
-            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer;">🗑️ Löschen</button>
+            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer; margin-top: 5px;">🗑️ Löschen</button>
           </div>
         `);
         
@@ -199,9 +317,9 @@ export default function ExclusionMap() {
         layer.bindPopup(`
           <div>
             <strong>${colorName} Linie</strong><br>
-            Länge: ${item.distance} m<br>
+            📏 Länge: <strong>${item.distance} m</strong><br>
             Erstellt: ${item.timestamp}<br>
-            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer;">🗑️ Löschen</button>
+            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer; margin-top: 5px;">🗑️ Löschen</button>
           </div>
         `);
         
@@ -217,7 +335,7 @@ export default function ExclusionMap() {
           <div>
             <strong>${colorName} Freihand</strong><br>
             Erstellt: ${item.timestamp}<br>
-            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer;">🗑️ Löschen</button>
+            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer; margin-top: 5px;">🗑️ Löschen</button>
           </div>
         `);
       }
@@ -241,67 +359,32 @@ export default function ExclusionMap() {
     localStorage.setItem('seekerExclusionAreas', JSON.stringify(items));
   };
 
-  const handleAddCircle = () => {
-    if (!window.seekerMapInstance || circleRadius <= 0) return;
-    
-    const map = window.seekerMapInstance;
-    const center = map.getCenter();
-    
-    const newItem = {
-      id: Date.now(),
-      type: 'circle',
-      color: currentColor,
-      center: { lat: center.lat, lng: center.lng },
-      radius: circleRadius,
-      timestamp: new Date().toLocaleTimeString()
-    };
-    
-    const updatedItems = [...drawnItems, newItem];
-    setDrawnItems(updatedItems);
-    saveItems(updatedItems);
-  };
-
-  const handleAddLine = () => {
-    if (!window.seekerMapInstance) return;
-    
-    const map = window.seekerMapInstance;
-    const center = map.getCenter();
-    
-    // Linie von 200m nach Norden
-    const offset = 0.0018; // ~200m
-    const start = { lat: center.lat - offset, lng: center.lng };
-    const end = { lat: center.lat + offset, lng: center.lng };
-    
-    // Distanz berechnen (Haversine Formel vereinfacht)
-    const R = 6371000; // Erdradius in Metern
-    const dLat = (end.lat - start.lat) * Math.PI / 180;
-    const dLng = (end.lng - start.lng) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
-              Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) * 
-              Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const distance = Math.round(R * c);
-    
-    const newItem = {
-      id: Date.now(),
-      type: 'line',
-      color: currentColor,
-      start: start,
-      end: end,
-      distance: distance,
-      timestamp: new Date().toLocaleTimeString()
-    };
-    
-    const updatedItems = [...drawnItems, newItem];
-    setDrawnItems(updatedItems);
-    saveItems(updatedItems);
-  };
-
   const clearAllItems = () => {
     if (confirm('Alle markierten Bereiche löschen?')) {
       setDrawnItems([]);
       localStorage.removeItem('seekerExclusionAreas');
+      if (window.tempLayer) {
+        window.tempLayer.clearLayers();
+      }
+      setIsDrawingLine(false);
+      setLineStart(null);
+      setIsDrawingFreehand(false);
+      setCurrentPath([]);
     }
+  };
+
+  const getToolInstructions = () => {
+    if (currentTool === 'circle') {
+      return 'Tippe auf die Karte um einen Kreis zu platzieren';
+    } else if (currentTool === 'line') {
+      if (isDrawingLine) {
+        return 'Tippe auf den Endpunkt der Linie';
+      }
+      return 'Tippe auf die Karte für den Startpunkt der Linie';
+    } else if (currentTool === 'draw') {
+      return 'Berühre die Karte und zeichne mit dem Finger';
+    }
+    return '';
   };
 
   if (!userLocation) {
@@ -326,7 +409,10 @@ export default function ExclusionMap() {
         <div 
           ref={mapRef} 
           className="w-full h-96"
-          style={{ minHeight: '400px' }}
+          style={{ 
+            minHeight: '400px',
+            touchAction: currentTool === 'draw' ? 'none' : 'auto'
+          }}
         />
         
         <div className="p-4 border-t bg-gray-50">
@@ -353,7 +439,12 @@ export default function ExclusionMap() {
           {/* Tool-Auswahl */}
           <div className="flex justify-center gap-2 mb-3 flex-wrap">
             <button
-              onClick={() => setCurrentTool('circle')}
+              onClick={() => {
+                setCurrentTool('circle');
+                setIsDrawingLine(false);
+                setLineStart(null);
+                if (window.tempLayer) window.tempLayer.clearLayers();
+              }}
               className={`px-3 py-2 rounded text-sm ${
                 currentTool === 'circle' ? 'bg-green-600 text-white' : 'bg-gray-200'
               }`}
@@ -361,7 +452,12 @@ export default function ExclusionMap() {
               🟢 Kreis
             </button>
             <button
-              onClick={() => setCurrentTool('line')}
+              onClick={() => {
+                setCurrentTool('line');
+                setIsDrawingLine(false);
+                setLineStart(null);
+                if (window.tempLayer) window.tempLayer.clearLayers();
+              }}
               className={`px-3 py-2 rounded text-sm ${
                 currentTool === 'line' ? 'bg-green-600 text-white' : 'bg-gray-200'
               }`}
@@ -369,7 +465,12 @@ export default function ExclusionMap() {
               📏 Linie
             </button>
             <button
-              onClick={() => setCurrentTool('draw')}
+              onClick={() => {
+                setCurrentTool('draw');
+                setIsDrawingLine(false);
+                setLineStart(null);
+                if (window.tempLayer) window.tempLayer.clearLayers();
+              }}
               className={`px-3 py-2 rounded text-sm ${
                 currentTool === 'draw' ? 'bg-green-600 text-white' : 'bg-gray-200'
               }`}
@@ -395,48 +496,24 @@ export default function ExclusionMap() {
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex justify-center gap-2 mb-3 flex-wrap">
-            {currentTool === 'circle' && (
-              <button
-                onClick={handleAddCircle}
-                className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              >
-                ➕ Kreis hinzufügen
-              </button>
-            )}
-            
-            {currentTool === 'line' && (
-              <button
-                onClick={handleAddLine}
-                className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              >
-                ➕ Linie hinzufügen
-              </button>
-            )}
-            
-            {currentTool === 'draw' && (
-              <div className="text-sm text-green-600 px-3 py-2">
-                ✏️ Berühre die Karte und zeichne mit dem Finger
-              </div>
-            )}
-            
+          {/* Instruktionen */}
+          <div className="text-sm text-center mb-3 p-2 bg-blue-50 rounded">
+            💡 {getToolInstructions()}
+          </div>
+
+          {/* Löschen Button */}
+          <div className="flex justify-center mb-3">
             <button
               onClick={clearAllItems}
-              className="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
             >
               🗑️ Alles löschen
             </button>
           </div>
           
-          <div className="text-xs text-gray-500 text-center mb-2">
-            {currentTool === 'circle' && 'Kreise werden um die Kartenmitte erstellt'}
-            {currentTool === 'line' && 'Linien werden um die Kartenmitte erstellt'}
-            {currentTool === 'draw' && 'Freihand: Berühre und ziehe über die Karte'}
-          </div>
-          
           <div className="text-xs text-green-600 text-center">
             ✅ {drawnItems.length} Elemente gezeichnet • Zum Löschen einzelne Elemente anklicken
+            {isDrawingLine && ' • 📍 Wähle jetzt den Endpunkt'}
           </div>
         </div>
       </div>
