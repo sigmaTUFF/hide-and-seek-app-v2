@@ -6,12 +6,13 @@ export default function ExclusionMap() {
   const [userLocation, setUserLocation] = useState(null);
   const [drawnItems, setDrawnItems] = useState([]);
   const [currentColor, setCurrentColor] = useState('red');
-  const [currentTool, setCurrentTool] = useState('circle');
+  const [currentTool, setCurrentTool] = useState('none'); // Startet mit keinem Tool
   const [circleRadius, setCircleRadius] = useState(0.5); // in km
   const [isDrawingLine, setIsDrawingLine] = useState(false);
   const [lineStart, setLineStart] = useState(null);
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
   const [currentPath, setCurrentPath] = useState([]);
+  const [freehandMode, setFreehandMode] = useState(false);
 
   // Leaflet CSS und JS dynamisch laden
   useEffect(() => {
@@ -35,15 +36,9 @@ export default function ExclusionMap() {
       setMapLoaded(true);
     }
 
-    // Gespeicherte Items laden
-    const saved = localStorage.getItem('seekerExclusionAreas');
-    if (saved) {
-      try {
-        setDrawnItems(JSON.parse(saved));
-      } catch (e) {
-        console.error('Fehler beim Laden der gespeicherten Bereiche:', e);
-      }
-    }
+    // Gespeicherte Items laden (verwende state statt localStorage)
+    const initialItems = [];
+    setDrawnItems(initialItems);
   }, []);
 
   // Position ermitteln
@@ -70,20 +65,25 @@ export default function ExclusionMap() {
 
   // Karte initialisieren
   useEffect(() => {
-    if (mapLoaded && userLocation && mapRef.current && !window.seekerMapInstance) {
+    if (mapLoaded && userLocation && mapRef.current && !mapRef.current._leaflet_id) {
       initializeMap();
     }
   }, [mapLoaded, userLocation]);
 
   // Items neu rendern wenn sich drawnItems ändert
   useEffect(() => {
-    if (window.seekerMapInstance && window.layerGroup) {
+    if (mapRef.current && mapRef.current._leaflet_id && window.seekerLayerGroup) {
       renderAllItems();
     }
   }, [drawnItems]);
 
   const initializeMap = () => {
     const L = window.L;
+    
+    // Alte Karte cleanup falls vorhanden
+    if (mapRef.current._leaflet_id) {
+      mapRef.current._leaflet.remove();
+    }
     
     // Karte erstellen
     const map = L.map(mapRef.current).setView([userLocation.lat, userLocation.lng], 15);
@@ -99,11 +99,9 @@ export default function ExclusionMap() {
       .bindPopup('📍 Deine Position')
       .openPopup();
     
-    // Layer Group für gezeichnete Items
-    window.layerGroup = L.layerGroup().addTo(map);
-    
-    // Temporäre Layer für Vorschauen
-    window.tempLayer = L.layerGroup().addTo(map);
+    // Layer Groups für gezeichnete Items und temporäre Elemente
+    window.seekerLayerGroup = L.layerGroup().addTo(map);
+    window.seekerTempLayer = L.layerGroup().addTo(map);
 
     // Klick-Events für die verschiedenen Tools
     map.on('click', (e) => {
@@ -115,19 +113,22 @@ export default function ExclusionMap() {
     let path = [];
     let currentPolyline = null;
 
-    map.on('mousedown touchstart', (e) => {
-      if (currentTool === 'draw') {
+    const startDrawing = (e) => {
+      if (currentTool === 'draw' && freehandMode) {
         drawing = true;
         setIsDrawingFreehand(true);
-        path = [e.latlng];
-        setCurrentPath([e.latlng]);
+        
+        // Koordinaten aus Event extrahieren
+        const latlng = e.latlng || map.mouseEventToLatLng(e.originalEvent);
+        path = [latlng];
+        setCurrentPath([latlng]);
         
         // Temporäre Linie während des Zeichnens
         currentPolyline = L.polyline(path, {
           color: currentColor === 'red' ? '#ff0000' : '#0000ff',
           weight: 3,
           opacity: 0.8
-        }).addTo(window.tempLayer);
+        }).addTo(window.seekerTempLayer);
         
         // Verhindere Karten-Bewegung während des Zeichnens
         map.dragging.disable();
@@ -139,21 +140,22 @@ export default function ExclusionMap() {
         
         e.originalEvent?.preventDefault();
       }
-    });
+    };
 
-    map.on('mousemove touchmove', (e) => {
-      if (drawing && currentTool === 'draw') {
-        path.push(e.latlng);
+    const continueDrawing = (e) => {
+      if (drawing && currentTool === 'draw' && freehandMode) {
+        const latlng = e.latlng || map.mouseEventToLatLng(e.originalEvent);
+        path.push(latlng);
         setCurrentPath([...path]);
         if (currentPolyline) {
           currentPolyline.setLatLngs(path);
         }
         e.originalEvent?.preventDefault();
       }
-    });
+    };
 
-    map.on('mouseup touchend', (e) => {
-      if (drawing && currentTool === 'draw') {
+    const endDrawing = (e) => {
+      if (drawing && currentTool === 'draw' && freehandMode) {
         drawing = false;
         setIsDrawingFreehand(false);
         
@@ -166,7 +168,7 @@ export default function ExclusionMap() {
         map.keyboard.enable();
         
         // Temporäre Linie entfernen
-        window.tempLayer.clearLayers();
+        window.seekerTempLayer.clearLayers();
         
         // Nur speichern wenn genug Punkte vorhanden
         if (path.length > 3) {
@@ -178,23 +180,36 @@ export default function ExclusionMap() {
             timestamp: new Date().toLocaleTimeString()
           };
           
-          const updatedItems = [...drawnItems, newItem];
-          setDrawnItems(updatedItems);
-          saveItems(updatedItems);
+          setDrawnItems(prev => [...prev, newItem]);
+          
+          // Tool zurücksetzen nach dem Freihand-Zeichnen
+          setCurrentTool('none');
         }
         
         setCurrentPath([]);
+        path = [];
+        currentPolyline = null;
         e.originalEvent?.preventDefault();
       }
-    });
+    };
 
-    window.seekerMapInstance = map;
+    // Event Listeners
+    map.on('mousedown', startDrawing);
+    map.on('touchstart', startDrawing);
+    map.on('mousemove', continueDrawing);
+    map.on('touchmove', continueDrawing);
+    map.on('mouseup', endDrawing);
+    map.on('touchend', endDrawing);
+
+    // Karte in ref speichern für cleanup
+    mapRef.current._leaflet = map;
+    
     renderAllItems();
   };
 
   const handleMapClick = (latlng) => {
     // Nicht reagieren wenn gerade freihand gezeichnet wird
-    if (isDrawingFreehand) return;
+    if (isDrawingFreehand || (currentTool === 'draw' && !freehandMode)) return;
     
     if (currentTool === 'circle') {
       addCircle(latlng);
@@ -216,9 +231,10 @@ export default function ExclusionMap() {
       timestamp: new Date().toLocaleTimeString()
     };
     
-    const updatedItems = [...drawnItems, newItem];
-    setDrawnItems(updatedItems);
-    saveItems(updatedItems);
+    setDrawnItems(prev => [...prev, newItem]);
+    
+    // Tool zurücksetzen nach dem Platzieren
+    setCurrentTool('none');
   };
 
   const handleLineClick = (latlng) => {
@@ -229,13 +245,13 @@ export default function ExclusionMap() {
       
       // Temporären Startpunkt anzeigen
       const L = window.L;
-      window.tempLayer.clearLayers();
+      window.seekerTempLayer.clearLayers();
       L.circleMarker([latlng.lat, latlng.lng], {
         radius: 5,
         color: currentColor === 'red' ? '#ff0000' : '#0000ff',
         fillColor: currentColor === 'red' ? '#ff0000' : '#0000ff',
         fillOpacity: 0.8
-      }).addTo(window.tempLayer);
+      }).addTo(window.seekerTempLayer);
       
     } else {
       // Zweiten Punkt setzen und Linie erstellen
@@ -262,23 +278,24 @@ export default function ExclusionMap() {
         timestamp: new Date().toLocaleTimeString()
       };
       
-      const updatedItems = [...drawnItems, newItem];
-      setDrawnItems(updatedItems);
-      saveItems(updatedItems);
+      setDrawnItems(prev => [...prev, newItem]);
+      
+      // Tool zurücksetzen nach dem Zeichnen einer Linie
+      setCurrentTool('none');
       
       // Reset
       setIsDrawingLine(false);
       setLineStart(null);
-      window.tempLayer.clearLayers();
+      window.seekerTempLayer.clearLayers();
     }
   };
 
   const renderAllItems = () => {
     const L = window.L;
-    if (!window.layerGroup) return;
+    if (!window.seekerLayerGroup) return;
     
     // Alle Layer entfernen
-    window.layerGroup.clearLayers();
+    window.seekerLayerGroup.clearLayers();
     
     // Alle Items neu rendern
     drawnItems.forEach(item => {
@@ -341,7 +358,7 @@ export default function ExclusionMap() {
       }
       
       if (layer) {
-        layer.addTo(window.layerGroup);
+        layer.addTo(window.seekerLayerGroup);
       }
     });
   };
@@ -349,32 +366,28 @@ export default function ExclusionMap() {
   // Global delete function
   useEffect(() => {
     window.deleteItem = (itemId) => {
-      const updatedItems = drawnItems.filter(item => item.id !== itemId);
-      setDrawnItems(updatedItems);
-      saveItems(updatedItems);
+      setDrawnItems(prev => prev.filter(item => item.id !== itemId));
     };
-  }, [drawnItems]);
-
-  const saveItems = (items) => {
-    localStorage.setItem('seekerExclusionAreas', JSON.stringify(items));
-  };
+  }, []);
 
   const clearAllItems = () => {
-    if (confirm('Alle markierten Bereiche löschen?')) {
+    if (window.confirm('Alle markierten Bereiche löschen?')) {
       setDrawnItems([]);
-      localStorage.removeItem('seekerExclusionAreas');
-      if (window.tempLayer) {
-        window.tempLayer.clearLayers();
+      if (window.seekerTempLayer) {
+        window.seekerTempLayer.clearLayers();
       }
       setIsDrawingLine(false);
       setLineStart(null);
       setIsDrawingFreehand(false);
+      setFreehandMode(false);
       setCurrentPath([]);
     }
   };
 
   const getToolInstructions = () => {
-    if (currentTool === 'circle') {
+    if (currentTool === 'none') {
+      return 'Wähle ein Werkzeug aus den Buttons unten';
+    } else if (currentTool === 'circle') {
       return 'Tippe auf die Karte um einen Kreis zu platzieren';
     } else if (currentTool === 'line') {
       if (isDrawingLine) {
@@ -382,10 +395,23 @@ export default function ExclusionMap() {
       }
       return 'Tippe auf die Karte für den Startpunkt der Linie';
     } else if (currentTool === 'draw') {
-      return 'Berühre die Karte und zeichne mit dem Finger';
+      if (freehandMode) {
+        return 'Berühre die Karte und zeichne mit dem Finger';
+      } else {
+        return 'Klicke "Freihand starten" um zu zeichnen';
+      }
     }
     return '';
   };
+
+  // Cleanup beim Unmount
+  useEffect(() => {
+    return () => {
+      if (mapRef.current && mapRef.current._leaflet) {
+        mapRef.current._leaflet.remove();
+      }
+    };
+  }, []);
 
   if (!userLocation) {
     return (
@@ -443,10 +469,11 @@ export default function ExclusionMap() {
                 setCurrentTool('circle');
                 setIsDrawingLine(false);
                 setLineStart(null);
-                if (window.tempLayer) window.tempLayer.clearLayers();
+                setFreehandMode(false);
+                if (window.seekerTempLayer) window.seekerTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
-                currentTool === 'circle' ? 'bg-green-600 text-white' : 'bg-gray-200'
+                currentTool === 'circle' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
               }`}
             >
               🟢 Kreis
@@ -456,10 +483,11 @@ export default function ExclusionMap() {
                 setCurrentTool('line');
                 setIsDrawingLine(false);
                 setLineStart(null);
-                if (window.tempLayer) window.tempLayer.clearLayers();
+                setFreehandMode(false);
+                if (window.seekerTempLayer) window.seekerTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
-                currentTool === 'line' ? 'bg-green-600 text-white' : 'bg-gray-200'
+                currentTool === 'line' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
               }`}
             >
               📏 Linie
@@ -469,15 +497,55 @@ export default function ExclusionMap() {
                 setCurrentTool('draw');
                 setIsDrawingLine(false);
                 setLineStart(null);
-                if (window.tempLayer) window.tempLayer.clearLayers();
+                setFreehandMode(false);
+                if (window.seekerTempLayer) window.seekerTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
-                currentTool === 'draw' ? 'bg-green-600 text-white' : 'bg-gray-200'
+                currentTool === 'draw' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
               }`}
             >
               ✏️ Freihand
             </button>
+            {currentTool !== 'none' && (
+              <button
+                onClick={() => {
+                  setCurrentTool('none');
+                  setIsDrawingLine(false);
+                  setLineStart(null);
+                  setFreehandMode(false);
+                  if (window.seekerTempLayer) window.seekerTempLayer.clearLayers();
+                }}
+                className="px-3 py-2 rounded text-sm bg-gray-400 text-white hover:bg-gray-500"
+              >
+                ❌ Abbrechen
+              </button>
+            )}
           </div>
+
+          {/* Freihand Start/Stop Buttons */}
+          {currentTool === 'draw' && (
+            <div className="flex justify-center gap-2 mb-3">
+              {!freehandMode ? (
+                <button
+                  onClick={() => setFreehandMode(true)}
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                >
+                  🎨 Freihand starten
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setFreehandMode(false);
+                    setIsDrawingFreehand(false);
+                    if (window.seekerTempLayer) window.seekerTempLayer.clearLayers();
+                  }}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                >
+                  ⏹️ Freihand beenden
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Kreis-Radius Eingabe */}
           {currentTool === 'circle' && (
