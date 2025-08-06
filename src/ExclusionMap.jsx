@@ -163,7 +163,8 @@ export default function ExclusionMap() {
     setIsDrawingFreehand(true);
     
     const latlng = e.latlng;
-    setFreehandPoints([latlng]);
+    const initialPoints = [latlng];
+    setFreehandPoints(initialPoints);
     
     // Temporäre Linie für Live-Preview
     const L = window.L;
@@ -174,6 +175,9 @@ export default function ExclusionMap() {
       weight: 4,
       opacity: 0.8
     }).addTo(window.myTempLayer);
+    
+    // Points in globaler Variable speichern für sofortigen Zugriff
+    window.currentFreehandPoints = initialPoints;
   };
 
   const handleFreehandMove = (e) => {
@@ -185,16 +189,19 @@ export default function ExclusionMap() {
     
     const latlng = e.latlng;
     
-    setFreehandPoints(prev => {
-      const newPoints = [...prev, latlng];
-      
-      // Live-Update der temporären Linie
-      if (window.currentFreehandLine) {
-        window.currentFreehandLine.setLatLngs(newPoints);
-      }
-      
-      return newPoints;
-    });
+    // Punkte zur globalen Variable hinzufügen
+    if (!window.currentFreehandPoints) {
+      window.currentFreehandPoints = [];
+    }
+    window.currentFreehandPoints.push(latlng);
+    
+    // Live-Update der temporären Linie
+    if (window.currentFreehandLine) {
+      window.currentFreehandLine.setLatLngs(window.currentFreehandPoints);
+    }
+    
+    // State aktualisieren (für UI)
+    setFreehandPoints([...window.currentFreehandPoints]);
   };
 
   const handleFreehandEnd = (e) => {
@@ -208,24 +215,37 @@ export default function ExclusionMap() {
     
     setIsDrawingFreehand(false);
     
-    // Freihand-Linie zu den Items hinzufügen
-    if (freehandPoints.length > 1) {
+    // Die aktuellen Punkte aus der globalen Variable verwenden
+    const finalPoints = window.currentFreehandPoints || [];
+    
+    // Freihand-Linie zu den Items hinzufügen (nur wenn genug Punkte)
+    if (finalPoints.length > 2) {
       const newItem = {
         id: Date.now(),
         type: 'freehand',
         color: currentColor,
-        points: freehandPoints.map(p => ({ lat: p.lat, lng: p.lng })),
+        points: finalPoints.map(p => ({ lat: p.lat, lng: p.lng })),
         timestamp: new Date().toLocaleTimeString()
       };
       
-      setDrawnItems(prev => [...prev, newItem]);
+      console.log('Adding freehand item with points:', finalPoints.length);
+      setDrawnItems(prev => {
+        const updated = [...prev, newItem];
+        console.log('Updated items:', updated);
+        return updated;
+      });
+    } else {
+      console.log('Not enough points for freehand drawing:', finalPoints.length);
     }
     
     // Reset
     setFreehandPoints([]);
+    window.currentFreehandPoints = null;
     window.myTempLayer.clearLayers();
     window.currentFreehandLine = null;
-    setCurrentTool('none');
+    
+    // Tool NICHT automatisch zurücksetzen - Benutzer kann weiter zeichnen
+    // setCurrentTool('none');
   };
 
   const addCircle = (latlng) => {
@@ -408,7 +428,7 @@ export default function ExclusionMap() {
       if (isDrawingFreehand) {
         return 'Ziehe zum Zeichnen - lasse los um zu beenden';
       }
-      return 'Klicke und ziehe um frei zu zeichnen';
+      return 'Klicke und ziehe um frei zu zeichnen (Tool bleibt aktiv für weitere Zeichnungen)';
     }
     return '';
   };
