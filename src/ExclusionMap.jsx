@@ -66,15 +66,21 @@ export default function ExclusionMap() {
       window.myMap.off('mousedown');
       window.myMap.off('mousemove');
       window.myMap.off('mouseup');
+      window.myMap.off('touchstart');
+      window.myMap.off('touchmove');
+      window.myMap.off('touchend');
       
-      // Neuen Handler mit aktuellem State hinzufügen
-      window.myMap.on('click', (e) => {
-        console.log('Map clicked, current tool:', currentTool);
-        handleMapClick(e.latlng);
-      });
-
-      // Freihand-Zeichnung Handler
+      // Karten-Interaktionen basierend auf Tool steuern
       if (currentTool === 'freehand') {
+        // Drag deaktivieren für Freihand-Zeichnung
+        window.myMap.dragging.disable();
+        window.myMap.touchZoom.disable();
+        window.myMap.doubleClickZoom.disable();
+        window.myMap.scrollWheelZoom.disable();
+        window.myMap.boxZoom.disable();
+        window.myMap.keyboard.disable();
+        
+        // Freihand-Handler aktivieren
         window.myMap.on('mousedown', handleFreehandStart);
         window.myMap.on('mousemove', handleFreehandMove);
         window.myMap.on('mouseup', handleFreehandEnd);
@@ -83,6 +89,20 @@ export default function ExclusionMap() {
         window.myMap.on('touchstart', handleFreehandStart);
         window.myMap.on('touchmove', handleFreehandMove);
         window.myMap.on('touchend', handleFreehandEnd);
+      } else {
+        // Normale Karten-Interaktionen aktivieren
+        window.myMap.dragging.enable();
+        window.myMap.touchZoom.enable();
+        window.myMap.doubleClickZoom.enable();
+        window.myMap.scrollWheelZoom.enable();
+        window.myMap.boxZoom.enable();
+        window.myMap.keyboard.enable();
+        
+        // Normal Click Handler
+        window.myMap.on('click', (e) => {
+          console.log('Map clicked, current tool:', currentTool);
+          handleMapClick(e.latlng);
+        });
       }
     }
   }, [currentTool, isDrawingLine, lineStart, circleRadius, currentColor, isDrawingFreehand]);
@@ -136,7 +156,10 @@ export default function ExclusionMap() {
   const handleFreehandStart = (e) => {
     if (currentTool !== 'freehand') return;
     
+    // Event stoppen um Karten-Drag zu verhindern
     e.originalEvent.preventDefault();
+    e.originalEvent.stopPropagation();
+    
     setIsDrawingFreehand(true);
     
     const latlng = e.latlng;
@@ -148,15 +171,18 @@ export default function ExclusionMap() {
     
     window.currentFreehandLine = L.polyline([latlng], {
       color: currentColor === 'red' ? '#ff0000' : '#0000ff',
-      weight: 3,
-      opacity: 0.7
+      weight: 4,
+      opacity: 0.8
     }).addTo(window.myTempLayer);
   };
 
   const handleFreehandMove = (e) => {
     if (currentTool !== 'freehand' || !isDrawingFreehand) return;
     
+    // Event stoppen um Karten-Drag zu verhindern
     e.originalEvent.preventDefault();
+    e.originalEvent.stopPropagation();
+    
     const latlng = e.latlng;
     
     setFreehandPoints(prev => {
@@ -174,7 +200,12 @@ export default function ExclusionMap() {
   const handleFreehandEnd = (e) => {
     if (currentTool !== 'freehand' || !isDrawingFreehand) return;
     
-    e.originalEvent.preventDefault();
+    // Event stoppen
+    if (e.originalEvent) {
+      e.originalEvent.preventDefault();
+      e.originalEvent.stopPropagation();
+    }
+    
     setIsDrawingFreehand(false);
     
     // Freihand-Linie zu den Items hinzufügen
@@ -520,6 +551,11 @@ export default function ExclusionMap() {
           {/* Instruktionen */}
           <div className="text-sm text-center mb-3 p-2 bg-blue-50 rounded">
             💡 {getToolInstructions()}
+            {currentTool === 'freehand' && (
+              <div className="text-xs text-orange-600 mt-1">
+                ⚠️ Karten-Navigation ist im Freihand-Modus deaktiviert
+              </div>
+            )}
           </div>
 
           {/* Löschen Button */}
