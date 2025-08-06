@@ -56,6 +56,20 @@ export default function ExclusionMap() {
     }
   }, [mapLoaded, userLocation]);
 
+  // Click Handler updaten wenn sich Tool ändert
+  useEffect(() => {
+    if (window.myMap) {
+      // Alte Handler entfernen
+      window.myMap.off('click');
+      
+      // Neuen Handler mit aktuellem State hinzufügen
+      window.myMap.on('click', (e) => {
+        console.log('Map clicked, current tool:', currentTool);
+        handleMapClick(e.latlng);
+      });
+    }
+  }, [currentTool, isDrawingLine, lineStart, circleRadius, currentColor]);
+
   // Items rendern
   useEffect(() => {
     if (window.myMap && window.myLayerGroup) {
@@ -84,107 +98,9 @@ export default function ExclusionMap() {
     window.myLayerGroup = L.layerGroup().addTo(map);
     window.myTempLayer = L.layerGroup().addTo(map);
 
-    // Globale Referenzen für den Click Handler
-    window.mapState = {
-      getCurrentTool: () => document.querySelector('.tool-active')?.dataset.tool || 'none',
-      getCurrentColor: () => document.querySelector('.color-active')?.dataset.color || 'red',
-      getCircleRadius: () => parseFloat(document.querySelector('#radius-input')?.value) || 0.5
-    };
-
-    // Event Handler der auf globale Refs zugreift
-    map.on('click', (e) => {
-      const tool = window.mapState.getCurrentTool();
-      const color = window.mapState.getCurrentColor();
-      const radius = window.mapState.getCircleRadius();
-      
-      console.log('Map clicked, tool:', tool, 'color:', color);
-      
-      if (tool === 'circle') {
-        console.log('Adding circle with radius:', radius);
-        window.addCircleToMap(e.latlng, color, radius);
-      } else if (tool === 'line') {
-        console.log('Adding line');
-        window.addLineToMap(e.latlng, color);
-      }
-    });
-
     window.myMap = map;
     renderAllItems();
   };
-
-  // Globale Funktionen für Map-Clicks
-  useEffect(() => {
-    window.addCircleToMap = (latlng, color, radius) => {
-      console.log('addCircleToMap called');
-      if (radius <= 0) return;
-      
-      const newItem = {
-        id: Date.now(),
-        type: 'circle',
-        color: color,
-        center: { lat: latlng.lat, lng: latlng.lng },
-        radius: radius,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      
-      console.log('Adding circle:', newItem);
-      setDrawnItems(prev => [...prev, newItem]);
-      setCurrentTool('none');
-    };
-
-    window.addLineToMap = (latlng, color) => {
-      if (!window.lineDrawing) {
-        // Ersten Punkt setzen
-        window.lineDrawing = true;
-        window.lineStartPoint = latlng;
-        setIsDrawingLine(true);
-        setLineStart(latlng);
-        
-        const L = window.L;
-        window.myTempLayer.clearLayers();
-        L.circleMarker([latlng.lat, latlng.lng], {
-          radius: 5,
-          color: color === 'red' ? '#ff0000' : '#0000ff',
-          fillColor: color === 'red' ? '#ff0000' : '#0000ff',
-          fillOpacity: 0.8
-        }).addTo(window.myTempLayer);
-        
-      } else {
-        // Zweiten Punkt setzen und Linie erstellen
-        const start = window.lineStartPoint;
-        const end = latlng;
-        
-        const R = 6371000;
-        const dLat = (end.lat - start.lat) * Math.PI / 180;
-        const dLng = (end.lng - start.lng) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
-                  Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) * 
-                  Math.sin(dLng/2) * Math.sin(dLng/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const distance = Math.round(R * c);
-        
-        const newItem = {
-          id: Date.now(),
-          type: 'line',
-          color: color,
-          start: { lat: start.lat, lng: start.lng },
-          end: { lat: end.lat, lng: end.lng },
-          distance: distance,
-          timestamp: new Date().toLocaleTimeString()
-        };
-        
-        setDrawnItems(prev => [...prev, newItem]);
-        
-        // Reset
-        window.lineDrawing = false;
-        window.lineStartPoint = null;
-        setIsDrawingLine(false);
-        setLineStart(null);
-        setCurrentTool('none');
-        window.myTempLayer.clearLayers();
-      }
-    };
-  }, []);
 
   const handleMapClick = (latlng) => {
     console.log('handleMapClick called with tool:', currentTool);
@@ -395,18 +311,16 @@ export default function ExclusionMap() {
             <button
               onClick={() => setCurrentColor('red')}
               className={`px-3 py-2 rounded text-white text-sm ${
-                currentColor === 'red' ? 'bg-red-600 color-active' : 'bg-red-400'
+                currentColor === 'red' ? 'bg-red-600' : 'bg-red-400'
               }`}
-              data-color="red"
             >
               🔴 Rot (Ausschluss)
             </button>
             <button
               onClick={() => setCurrentColor('blue')}
               className={`px-3 py-2 rounded text-white text-sm ${
-                currentColor === 'blue' ? 'bg-blue-600 color-active' : 'bg-blue-400'
+                currentColor === 'blue' ? 'bg-blue-600' : 'bg-blue-400'
               }`}
-              data-color="blue"
             >
               🔵 Blau (Info)
             </button>
@@ -423,9 +337,8 @@ export default function ExclusionMap() {
                 if (window.myTempLayer) window.myTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
-                currentTool === 'circle' ? 'bg-green-600 text-white tool-active' : 'bg-gray-200 hover:bg-gray-300'
+                currentTool === 'circle' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
               }`}
-              data-tool="circle"
             >
               🟢 Kreis
             </button>
@@ -438,9 +351,8 @@ export default function ExclusionMap() {
                 if (window.myTempLayer) window.myTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
-                currentTool === 'line' ? 'bg-green-600 text-white tool-active' : 'bg-gray-200 hover:bg-gray-300'
+                currentTool === 'line' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
               }`}
-              data-tool="line"
             >
               📏 Linie
             </button>
@@ -464,7 +376,6 @@ export default function ExclusionMap() {
             <div className="flex justify-center items-center gap-2 mb-3">
               <label className="text-sm">Radius:</label>
               <input
-                id="radius-input"
                 type="number"
                 value={circleRadius}
                 onChange={(e) => setCircleRadius(parseFloat(e.target.value) || 0.5)}
