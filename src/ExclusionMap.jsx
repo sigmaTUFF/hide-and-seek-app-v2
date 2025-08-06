@@ -10,6 +10,8 @@ export default function ExclusionMap() {
   const [circleRadius, setCircleRadius] = useState(0.5);
   const [isDrawingLine, setIsDrawingLine] = useState(false);
   const [lineStart, setLineStart] = useState(null);
+  const [isDrawingFreehand, setIsDrawingFreehand] = useState(false);
+  const [freehandPoints, setFreehandPoints] = useState([]);
 
   // Leaflet laden
   useEffect(() => {
@@ -61,14 +63,29 @@ export default function ExclusionMap() {
     if (window.myMap) {
       // Alte Handler entfernen
       window.myMap.off('click');
+      window.myMap.off('mousedown');
+      window.myMap.off('mousemove');
+      window.myMap.off('mouseup');
       
       // Neuen Handler mit aktuellem State hinzufügen
       window.myMap.on('click', (e) => {
         console.log('Map clicked, current tool:', currentTool);
         handleMapClick(e.latlng);
       });
+
+      // Freihand-Zeichnung Handler
+      if (currentTool === 'freehand') {
+        window.myMap.on('mousedown', handleFreehandStart);
+        window.myMap.on('mousemove', handleFreehandMove);
+        window.myMap.on('mouseup', handleFreehandEnd);
+        
+        // Touch-Events für Mobile
+        window.myMap.on('touchstart', handleFreehandStart);
+        window.myMap.on('touchmove', handleFreehandMove);
+        window.myMap.on('touchend', handleFreehandEnd);
+      }
     }
-  }, [currentTool, isDrawingLine, lineStart, circleRadius, currentColor]);
+  }, [currentTool, isDrawingLine, lineStart, circleRadius, currentColor, isDrawingFreehand]);
 
   // Items rendern
   useEffect(() => {
@@ -112,6 +129,72 @@ export default function ExclusionMap() {
       console.log('Adding line');
       handleLineClick(latlng);
     }
+    // Freihand wird über separate Handler behandelt
+  };
+
+  // Freihand-Zeichnung Handler
+  const handleFreehandStart = (e) => {
+    if (currentTool !== 'freehand') return;
+    
+    e.originalEvent.preventDefault();
+    setIsDrawingFreehand(true);
+    
+    const latlng = e.latlng;
+    setFreehandPoints([latlng]);
+    
+    // Temporäre Linie für Live-Preview
+    const L = window.L;
+    window.myTempLayer.clearLayers();
+    
+    window.currentFreehandLine = L.polyline([latlng], {
+      color: currentColor === 'red' ? '#ff0000' : '#0000ff',
+      weight: 3,
+      opacity: 0.7
+    }).addTo(window.myTempLayer);
+  };
+
+  const handleFreehandMove = (e) => {
+    if (currentTool !== 'freehand' || !isDrawingFreehand) return;
+    
+    e.originalEvent.preventDefault();
+    const latlng = e.latlng;
+    
+    setFreehandPoints(prev => {
+      const newPoints = [...prev, latlng];
+      
+      // Live-Update der temporären Linie
+      if (window.currentFreehandLine) {
+        window.currentFreehandLine.setLatLngs(newPoints);
+      }
+      
+      return newPoints;
+    });
+  };
+
+  const handleFreehandEnd = (e) => {
+    if (currentTool !== 'freehand' || !isDrawingFreehand) return;
+    
+    e.originalEvent.preventDefault();
+    setIsDrawingFreehand(false);
+    
+    // Freihand-Linie zu den Items hinzufügen
+    if (freehandPoints.length > 1) {
+      const newItem = {
+        id: Date.now(),
+        type: 'freehand',
+        color: currentColor,
+        points: freehandPoints.map(p => ({ lat: p.lat, lng: p.lng })),
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setDrawnItems(prev => [...prev, newItem]);
+    }
+    
+    // Reset
+    setFreehandPoints([]);
+    window.myTempLayer.clearLayers();
+    window.currentFreehandLine = null;
+    setCurrentTool('none');
   };
 
   const addCircle = (latlng) => {
@@ -234,6 +317,23 @@ export default function ExclusionMap() {
             <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer; margin-top: 5px;">🗑️ Löschen</button>
           </div>
         `);
+        
+      } else if (item.type === 'freehand') {
+        const points = item.points.map(p => [p.lat, p.lng]);
+        layer = L.polyline(points, {
+          color: color,
+          weight: 3,
+          opacity: 0.8
+        });
+        
+        layer.bindPopup(`
+          <div>
+            <strong>${colorName} Freihand-Zeichnung</strong><br>
+            📝 ${item.points.length} Punkte<br>
+            Erstellt: ${item.timestamp}<br>
+            <button onclick="window.deleteItem(${item.id})" style="background: red; color: white; border: none; padding: 5px; border-radius: 3px; cursor: pointer; margin-top: 5px;">🗑️ Löschen</button>
+          </div>
+        `);
       }
       
       if (layer) {
@@ -258,6 +358,8 @@ export default function ExclusionMap() {
       }
       setIsDrawingLine(false);
       setLineStart(null);
+      setIsDrawingFreehand(false);
+      setFreehandPoints([]);
     }
   };
 
@@ -271,6 +373,11 @@ export default function ExclusionMap() {
         return 'Tippe auf den Endpunkt der Linie';
       }
       return 'Tippe auf die Karte für den Startpunkt der Linie';
+    } else if (currentTool === 'freehand') {
+      if (isDrawingFreehand) {
+        return 'Ziehe zum Zeichnen - lasse los um zu beenden';
+      }
+      return 'Klicke und ziehe um frei zu zeichnen';
     }
     return '';
   };
@@ -303,7 +410,7 @@ export default function ExclusionMap() {
         <div className="p-4 border-t bg-gray-50">
           {/* Debug Info */}
           <div className="text-xs text-gray-500 mb-2 text-center">
-            Debug: Tool = {currentTool} | Items = {drawnItems.length}
+            Debug: Tool = {currentTool} | Items = {drawnItems.length} | Drawing = {isDrawingFreehand ? 'Ja' : 'Nein'}
           </div>
 
           {/* Farb-Auswahl */}
@@ -334,6 +441,8 @@ export default function ExclusionMap() {
                 setCurrentTool('circle');
                 setIsDrawingLine(false);
                 setLineStart(null);
+                setIsDrawingFreehand(false);
+                setFreehandPoints([]);
                 if (window.myTempLayer) window.myTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
@@ -348,6 +457,8 @@ export default function ExclusionMap() {
                 setCurrentTool('line');
                 setIsDrawingLine(false);
                 setLineStart(null);
+                setIsDrawingFreehand(false);
+                setFreehandPoints([]);
                 if (window.myTempLayer) window.myTempLayer.clearLayers();
               }}
               className={`px-3 py-2 rounded text-sm ${
@@ -356,12 +467,30 @@ export default function ExclusionMap() {
             >
               📏 Linie
             </button>
+            <button
+              onClick={() => {
+                console.log('Freehand tool selected');
+                setCurrentTool('freehand');
+                setIsDrawingLine(false);
+                setLineStart(null);
+                setIsDrawingFreehand(false);
+                setFreehandPoints([]);
+                if (window.myTempLayer) window.myTempLayer.clearLayers();
+              }}
+              className={`px-3 py-2 rounded text-sm ${
+                currentTool === 'freehand' ? 'bg-green-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+            >
+              ✏️ Freihand
+            </button>
             {currentTool !== 'none' && (
               <button
                 onClick={() => {
                   setCurrentTool('none');
                   setIsDrawingLine(false);
                   setLineStart(null);
+                  setIsDrawingFreehand(false);
+                  setFreehandPoints([]);
                   if (window.myTempLayer) window.myTempLayer.clearLayers();
                 }}
                 className="px-3 py-2 rounded text-sm bg-gray-400 text-white hover:bg-gray-500"
@@ -406,6 +535,7 @@ export default function ExclusionMap() {
           <div className="text-xs text-green-600 text-center">
             ✅ {drawnItems.length} Elemente gezeichnet • Zum Löschen einzelne Elemente anklicken
             {isDrawingLine && ' • 📍 Wähle jetzt den Endpunkt'}
+            {isDrawingFreehand && ' • ✏️ Zeichne gerade...'}
           </div>
         </div>
       </div>
